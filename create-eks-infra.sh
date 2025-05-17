@@ -19,47 +19,47 @@ ID_FILE="eks-infra.ids"
 
 if [ "$ACTION" = "create" ]; then
   # 1. VPC 생성
-  VPC_ID=$(aws ec2 create-vpc --cidr-block $VPC_CIDR --region $REGION --query 'Vpc.VpcId' --output text --profile $PROFILE)
+  VPC_ID=$(aws ec2 create-vpc --cidr-block $VPC_CIDR --region $REGION --query 'Vpc.VpcId' --output text)
   echo "VPC_ID: $VPC_ID"
 
   # 2. 서브넷 생성
-  SUBNET1_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PRIVATE_SUBNET1_CIDR --availability-zone $AVAILABILITY_ZONE1 --region $REGION --query 'Subnet.SubnetId' --output text --profile $PROFILE)
-  SUBNET2_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PRIVATE_SUBNET2_CIDR --availability-zone $AVAILABILITY_ZONE2 --region $REGION --query 'Subnet.SubnetId' --output text --profile $PROFILE)
-  SUBNET3_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PRIVATE_SUBNET3_CIDR --availability-zone $AVAILABILITY_ZONE3 --region $REGION --query 'Subnet.SubnetId' --output text --profile $PROFILE)
-  PUBLIC_SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PUBLIC_SUBNET_CIDR --availability-zone $AVAILABILITY_ZONE1 --region $REGION --query 'Subnet.SubnetId' --output text --profile $PROFILE)
+  SUBNET1_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PRIVATE_SUBNET1_CIDR --availability-zone $AVAILABILITY_ZONE1 --region $REGION --query 'Subnet.SubnetId' --output text)
+  SUBNET2_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PRIVATE_SUBNET2_CIDR --availability-zone $AVAILABILITY_ZONE2 --region $REGION --query 'Subnet.SubnetId' --output text)
+  SUBNET3_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PRIVATE_SUBNET3_CIDR --availability-zone $AVAILABILITY_ZONE3 --region $REGION --query 'Subnet.SubnetId' --output text)
+  PUBLIC_SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $PUBLIC_SUBNET_CIDR --availability-zone $AVAILABILITY_ZONE1 --region $REGION --query 'Subnet.SubnetId' --output text)
   echo "Private Subnets: $SUBNET1_ID, $SUBNET2_ID, $SUBNET3_ID"
   echo "Public Subnet: $PUBLIC_SUBNET_ID"
 
   # 3. 인터넷 게이트웨이 생성 및 연결
-  IGW_ID=$(aws ec2 create-internet-gateway --region $REGION --query 'InternetGateway.InternetGatewayId' --output text --profile $PROFILE)
-  aws ec2 attach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID --region $REGION --profile $PROFILE
+  IGW_ID=$(aws ec2 create-internet-gateway --region $REGION --query 'InternetGateway.InternetGatewayId' --output text)
+  aws ec2 attach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID --region $REGION
   echo "IGW_ID: $IGW_ID"
 
   # 4. Elastic IP 생성
-  EIP_ALLOC_ID=$(aws ec2 allocate-address --domain vpc --region $REGION --query 'AllocationId' --output text --profile $PROFILE)
+  EIP_ALLOC_ID=$(aws ec2 allocate-address --domain vpc --region $REGION --query 'AllocationId' --output text)
   echo "EIP_ALLOC_ID: $EIP_ALLOC_ID"
 
   # 5. NAT Gateway 생성
-  NAT_GW_ID=$(aws ec2 create-nat-gateway --subnet-id $PUBLIC_SUBNET_ID --allocation-id $EIP_ALLOC_ID --region $REGION --query 'NatGateway.NatGatewayId' --output text --profile $PROFILE)
+  NAT_GW_ID=$(aws ec2 create-nat-gateway --subnet-id $PUBLIC_SUBNET_ID --allocation-id $EIP_ALLOC_ID --region $REGION --query 'NatGateway.NatGatewayId' --output text)
   echo "NAT_GW_ID: $NAT_GW_ID"
   echo "NAT Gateway가 available 상태가 될 때까지 잠시 기다립니다..."
-  aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT_GW_ID --region $REGION --profile $PROFILE
+  aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT_GW_ID --region $REGION
 
   # 6. 라우트 테이블 생성 및 라우팅
   # 퍼블릭 라우트 테이블
-  PUB_RTB_ID=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --query 'RouteTable.RouteTableId' --output text --profile $PROFILE)
-  aws ec2 create-route --route-table-id $PUB_RTB_ID --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID --region $REGION --profile $PROFILE
-  aws ec2 associate-route-table --subnet-id $PUBLIC_SUBNET_ID --route-table-id $PUB_RTB_ID --region $REGION --profile $PROFILE
+  PUB_RTB_ID=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --query 'RouteTable.RouteTableId' --output text)
+  aws ec2 create-route --route-table-id $PUB_RTB_ID --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID --region $REGION
+  aws ec2 associate-route-table --subnet-id $PUBLIC_SUBNET_ID --route-table-id $PUB_RTB_ID --region $REGION
 
   # 프라이빗 라우트 테이블
-  PRI_RTB_ID=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --query 'RouteTable.RouteTableId' --output text --profile $PROFILE)
-  aws ec2 create-route --route-table-id $PRI_RTB_ID --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $NAT_GW_ID --region $REGION --profile $PROFILE
-  aws ec2 associate-route-table --subnet-id $SUBNET1_ID --route-table-id $PRI_RTB_ID --region $REGION --profile $PROFILE
-  aws ec2 associate-route-table --subnet-id $SUBNET2_ID --route-table-id $PRI_RTB_ID --region $REGION --profile $PROFILE
-  aws ec2 associate-route-table --subnet-id $SUBNET3_ID --route-table-id $PRI_RTB_ID --region $REGION --profile $PROFILE
+  PRI_RTB_ID=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --query 'RouteTable.RouteTableId' --output text)
+  aws ec2 create-route --route-table-id $PRI_RTB_ID --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $NAT_GW_ID --region $REGION
+  aws ec2 associate-route-table --subnet-id $SUBNET1_ID --route-table-id $PRI_RTB_ID --region $REGION
+  aws ec2 associate-route-table --subnet-id $SUBNET2_ID --route-table-id $PRI_RTB_ID --region $REGION
+  aws ec2 associate-route-table --subnet-id $SUBNET3_ID --route-table-id $PRI_RTB_ID --region $REGION
 
   # 7. EKS용 보안 그룹 생성
-  SG_ID=$(aws ec2 create-security-group --group-name eks-cluster-sg --description EKSClusterSG --vpc-id $VPC_ID --region $REGION --query 'GroupId' --output text --profile $PROFILE)
+  SG_ID=$(aws ec2 create-security-group --group-name eks-cluster-sg --description EKSClusterSG --vpc-id $VPC_ID --region $REGION --query 'GroupId' --output text)
   echo "SG_ID: $SG_ID"
 
   # 8. EKS 클러스터 생성
@@ -69,7 +69,7 @@ if [ "$ACTION" = "create" ]; then
     --kubernetes-version 1.30 \
     --role-arn $EKS_ROLE_ARN \
     --resources-vpc-config subnetIds=$SUBNET1_ID,$SUBNET2_ID,$SUBNET3_ID,securityGroupIds=$SG_ID \
-    --profile $PROFILE
+   
 
   echo "EKS 클러스터 생성 요청 완료!"
 
@@ -98,27 +98,27 @@ elif [ "$ACTION" = "delete" ]; then
   source $ID_FILE
   echo "리소스 삭제를 시작합니다. (명령어는 echo로 감싸서 출력)"
   # 1. EKS 클러스터 삭제
-  echo aws eks delete-cluster --name $CLUSTER_NAME --region $REGION --profile $PROFILE
+  echo aws eks delete-cluster --name $CLUSTER_NAME --region $REGION
   # 2. 보안 그룹 삭제
-  echo aws ec2 delete-security-group --group-id $SG_ID --region $REGION --profile $PROFILE
+  echo aws ec2 delete-security-group --group-id $SG_ID --region $REGION
   # 3. 프라이빗 라우트 테이블 삭제
-  echo aws ec2 delete-route-table --route-table-id $PRI_RTB_ID --region $REGION --profile $PROFILE
+  echo aws ec2 delete-route-table --route-table-id $PRI_RTB_ID --region $REGION
   # 4. 퍼블릭 라우트 테이블 삭제
-  echo aws ec2 delete-route-table --route-table-id $PUB_RTB_ID --region $REGION --profile $PROFILE
+  echo aws ec2 delete-route-table --route-table-id $PUB_RTB_ID --region $REGION
   # 5. NAT Gateway 삭제
-  echo aws ec2 delete-nat-gateway --nat-gateway-id $NAT_GW_ID --region $REGION --profile $PROFILE
+  echo aws ec2 delete-nat-gateway --nat-gateway-id $NAT_GW_ID --region $REGION
   # 6. EIP 해제
-  echo aws ec2 release-address --allocation-id $EIP_ALLOC_ID --region $REGION --profile $PROFILE
+  echo aws ec2 release-address --allocation-id $EIP_ALLOC_ID --region $REGION
   # 7. IGW Detach & 삭제
-  echo aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID --region $REGION --profile $PROFILE
-  echo aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID --region $REGION --profile $PROFILE
+  echo aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID --region $REGION
+  echo aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID --region $REGION
   # 8. 서브넷 삭제
-  echo aws ec2 delete-subnet --subnet-id $SUBNET1_ID --region $REGION --profile $PROFILE
-  echo aws ec2 delete-subnet --subnet-id $SUBNET2_ID --region $REGION --profile $PROFILE
-  echo aws ec2 delete-subnet --subnet-id $SUBNET3_ID --region $REGION --profile $PROFILE
-  echo aws ec2 delete-subnet --subnet-id $PUBLIC_SUBNET_ID --region $REGION --profile $PROFILE
+  echo aws ec2 delete-subnet --subnet-id $SUBNET1_ID --region $REGION
+  echo aws ec2 delete-subnet --subnet-id $SUBNET2_ID --region $REGION
+  echo aws ec2 delete-subnet --subnet-id $SUBNET3_ID --region $REGION
+  echo aws ec2 delete-subnet --subnet-id $PUBLIC_SUBNET_ID --region $REGION
   # 9. VPC 삭제
-  echo aws ec2 delete-vpc --vpc-id $VPC_ID --region $REGION --profile $PROFILE
+  echo aws ec2 delete-vpc --vpc-id $VPC_ID --region $REGION
   echo "$ID_FILE 파일을 삭제합니다."
   rm -f $ID_FILE
   exit 0
