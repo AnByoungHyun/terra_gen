@@ -134,4 +134,188 @@ aws ssm get-command-invocation \
 - 보안 강화를 위해 Bastion Host에는 인바운드 규칙이 없습니다.
 - Terraform 실행 권한은 예시로 `AdministratorAccess`가 부여되어 있으니, 실제 운영 환경에서는 최소 권한 정책을 적용하세요.
 - CloudFormation 템플릿의 Description, Tags, Outputs 등에는 한글을 사용할 수 있습니다.
-- 추가 문의 사항은 언제든 말씀해 주세요! 
+- 추가 문의 사항은 언제든 말씀해 주세요!
+
+---
+
+## 7. 새로운 VPC에 EKS 클러스터 생성(AWS CLI)
+
+아래는 AWS CLI를 사용하여 새로운 VPC에 EKS 클러스터를 생성하는 전체 과정입니다.
+
+### 1) VPC 및 private 서브넷, 퍼블릭 서브넷 생성
+
+```bash
+# VPC 생성
+aws ec2 create-vpc --cidr-block 10.20.0.0/16 --region ap-northeast-1 --profile hyun-ssm
+
+# 프라이빗 서브넷 3개 생성 (예시)
+aws ec2 create-subnet --vpc-id <VPC_ID> --cidr-block 10.20.1.0/24 --availability-zone ap-northeast-1a --region ap-northeast-1 --profile hyun-ssm
+aws ec2 create-subnet --vpc-id <VPC_ID> --cidr-block 10.20.2.0/24 --availability-zone ap-northeast-1c --region ap-northeast-1 --profile hyun-ssm
+aws ec2 create-subnet --vpc-id <VPC_ID> --cidr-block 10.20.3.0/24 --availability-zone ap-northeast-1d --region ap-northeast-1 --profile hyun-ssm
+
+# 퍼블릭 서브넷 생성 (예시)
+aws ec2 create-subnet --vpc-id <VPC_ID> --cidr-block 10.20.10.0/24 --availability-zone ap-northeast-1a --region ap-northeast-1 --profile hyun-ssm
+
+# 인터넷 게이트웨이 생성
+aws ec2 create-internet-gateway --region ap-northeast-1 --profile hyun-ssm
+
+# IGW를 VPC에 연결
+aws ec2 attach-internet-gateway --internet-gateway-id <IGW_ID> --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
+```
+
+### 2) NAT Gateway 및 라우트 테이블 구성
+
+```bash
+# Elastic IP 생성
+aws ec2 allocate-address --domain vpc --region ap-northeast-1 --profile hyun-ssm
+
+# NAT Gateway 생성
+aws ec2 create-nat-gateway --subnet-id <PUBLIC_SUBNET_ID> --allocation-id <EIP_ALLOCATION_ID> --region ap-northeast-1 --profile hyun-ssm
+
+# 퍼블릭 라우트 테이블 생성 및 IGW 라우팅
+aws ec2 create-route-table --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
+aws ec2 create-route --route-table-id <PUBLIC_RTB_ID> --destination-cidr-block 0.0.0.0/0 --gateway-id <IGW_ID> --region ap-northeast-1 --profile hyun-ssm
+aws ec2 associate-route-table --subnet-id <PUBLIC_SUBNET_ID> --route-table-id <PUBLIC_RTB_ID> --region ap-northeast-1 --profile hyun-ssm
+
+# 프라이빗 라우트 테이블 생성 및 NAT GW 라우팅
+aws ec2 create-route-table --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
+aws ec2 create-route --route-table-id <PRIVATE_RTB_ID> --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <NAT_GW_ID> --region ap-northeast-1 --profile hyun-ssm
+# 프라이빗 서브넷 각각에 연결
+aws ec2 associate-route-table --subnet-id <PRIVATE_SUBNET_ID> --route-table-id <PRIVATE_RTB_ID> --region ap-northeast-1 --profile hyun-ssm
+```
+
+### 3) EKS 클러스터 생성
+
+```bash
+aws eks create-cluster \
+  --name my-eks-cluster \
+  --region ap-northeast-1 \
+  --kubernetes-version 1.30 \
+  --role-arn <EKS_ROLE_ARN> \
+  --resources-vpc-config subnetIds=<PRIVATE_SUBNET_ID_1>,<PRIVATE_SUBNET_ID_2>,<PRIVATE_SUBNET_ID_3>,securityGroupIds=<SG_ID> \
+  --profile hyun-ssm
+```
+
+> 각 명령의 `<...>` 부분은 실제 생성된 리소스 ID로 대체해야 합니다.
+> EKS 클러스터는 프라이빗 서브넷 2개 이상, 보안 그룹, IAM Role이 필요합니다.
+
+### EKS 클러스터 생성에 필요한 IAM Role 권한 안내
+
+EKS 클러스터를 생성할 때 사용하는 IAM Role(예: eksClusterRole)에는 아래와 같은 권한이 필요합니다.
+
+#### 1. AWS 공식 권장 정책 (최소 권한)
+- `AmazonEKSClusterPolicy`
+- `AmazonEKSServicePolicy`
+
+#### 2. 추가적으로 필요한 경우
+- VPC, 서브넷, 보안 그룹 등 네트워크 리소스 생성을 위해서는
+  - `AmazonEC2FullAccess` 또는
+  - EC2/VPC 관련 최소 권한 정책이 필요할 수 있습니다.
+- 클러스터 로깅, CloudWatch 연동 등 추가 기능을 사용할 경우
+  - `CloudWatchLogsFullAccess` 등 필요에 따라 추가
+
+#### 3. 예시: eksClusterRole에 정책 연결
+```bash
+aws iam attach-role-policy --role-name eksClusterRole --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+aws iam attach-role-policy --role-name eksClusterRole --policy-arn arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+```
+
+> 실제 운영 환경에서는 최소 권한 원칙에 따라 필요한 정책만 연결하는 것이 보안상 안전합니다.
+
+---
+
+## 8. Bastion VPC와 EKS VPC 간 내부 통신(VPC Peering) 설정
+
+### 1) VPC Peering 연결 생성
+
+```bash
+aws ec2 create-vpc-peering-connection \
+  --vpc-id <BASTION_VPC_ID> \
+  --peer-vpc-id <EKS_VPC_ID> \
+  --region ap-northeast-1 \
+  --profile hyun-ssm
+```
+
+### 2) 피어링 연결 승인
+
+```bash
+aws ec2 accept-vpc-peering-connection \
+  --vpc-peering-connection-id <PEERING_ID> \
+  --region ap-northeast-1 \
+  --profile hyun-ssm
+```
+
+### 3) 라우트 테이블에 피어링 경로 추가
+
+```bash
+# Bastion VPC 라우트 테이블에 EKS VPC 경로 추가
+aws ec2 create-route \
+  --route-table-id <BASTION_RTB_ID> \
+  --destination-cidr-block <EKS_VPC_CIDR> \
+  --vpc-peering-connection-id <PEERING_ID> \
+  --region ap-northeast-1 \
+  --profile hyun-ssm
+
+# EKS VPC 라우트 테이블에 Bastion VPC 경로 추가
+aws ec2 create-route \
+  --route-table-id <EKS_RTB_ID> \
+  --destination-cidr-block <BASTION_VPC_CIDR> \
+  --vpc-peering-connection-id <PEERING_ID> \
+  --region ap-northeast-1 \
+  --profile hyun-ssm
+```
+
+### 4) 보안 그룹 설정
+
+- Bastion → EKS, EKS → Bastion 통신이 필요한 포트만 허용
+
+---
+
+> 위 명령에서 `<...>` 부분은 실제 리소스 ID 및 CIDR로 대체해야 합니다.
+> VPC Endpoint 방식이 필요하다면 추가 안내 가능합니다.
+
+---
+
+## 9. Private 서브넷에서 인터넷 접근을 위한 NAT Gateway 구성
+
+Helm 등 외부 인터넷 접근이 필요한 경우, NAT Gateway와 퍼블릭 서브넷을 아래와 같이 구성합니다.
+
+### 1) 퍼블릭 서브넷 생성 (예: 10.20.10.0/24, ap-northeast-1a)
+
+```bash
+aws ec2 create-subnet --vpc-id <VPC_ID> --cidr-block 10.20.10.0/24 --availability-zone ap-northeast-1a --region ap-northeast-1 --profile hyun-ssm
+```
+
+### 2) Elastic IP 생성
+
+```bash
+aws ec2 allocate-address --domain vpc --region ap-northeast-1 --profile hyun-ssm
+```
+
+### 3) NAT Gateway 생성
+
+```bash
+aws ec2 create-nat-gateway --subnet-id <PUBLIC_SUBNET_ID> --allocation-id <EIP_ALLOCATION_ID> --region ap-northeast-1 --profile hyun-ssm
+```
+
+### 4) 라우트 테이블 구성
+
+#### (1) 퍼블릭 라우트 테이블 생성 및 IGW 라우팅
+```bash
+aws ec2 create-route-table --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
+aws ec2 create-route --route-table-id <PUBLIC_RTB_ID> --destination-cidr-block 0.0.0.0/0 --gateway-id <IGW_ID> --region ap-northeast-1 --profile hyun-ssm
+aws ec2 associate-route-table --subnet-id <PUBLIC_SUBNET_ID> --route-table-id <PUBLIC_RTB_ID> --region ap-northeast-1 --profile hyun-ssm
+```
+
+#### (2) 프라이빗 라우트 테이블 생성 및 NAT GW 라우팅
+```bash
+aws ec2 create-route-table --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
+aws ec2 create-route --route-table-id <PRIVATE_RTB_ID> --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <NAT_GW_ID> --region ap-northeast-1 --profile hyun-ssm
+# 프라이빗 서브넷 각각에 연결
+aws ec2 associate-route-table --subnet-id <PRIVATE_SUBNET_ID> --route-table-id <PRIVATE_RTB_ID> --region ap-northeast-1 --profile hyun-ssm
+```
+
+> 각 명령의 `<...>` 부분은 실제 생성된 리소스 ID로 대체해야 합니다.
+> NAT Gateway가 생성된 후 상태가 available이 될 때까지 잠시 기다려야 합니다.
+
+--- 
