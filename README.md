@@ -224,7 +224,47 @@ aws iam attach-role-policy --role-name eksClusterRole --policy-arn arn:aws:iam::
 
 ---
 
-## 8. Bastion VPC와 EKS VPC 간 내부 통신(VPC Peering) 설정
+## 8. SSM send-command를 활용한 Bastion 자동화 실습
+
+### 1) 실습 표준: 명령을 echo로 감싸 출력
+
+```bash
+GIT_TOKEN=$(cat ./tmp/git_token.txt)
+echo $(aws ssm send-command --profile hyun-ssm --instance-ids i-0c28d55ca1f21c180 --document-name 'AWS-RunShellScript' --parameters commands='["set -e; export HOME=/home/ec2-user; cd /home/ec2-user; if [ ! -d terra_gen ]; then git clone https://${GIT_TOKEN}@github.com/AnByoungHyun/terra_gen.git; else git config --global --add safe.directory /home/ec2-user/terra_gen; cd terra_gen; git reset --hard HEAD; git pull; fi; cd /home/ec2-user/terra_gen/terraform; terraform init; terraform plan -out=tfplan; terraform apply -auto-approve tfplan"]' --comment 'EKS 인프라 자동화 실습' --output text)
+```
+
+- 실습 표준에 따라 모든 명령은 echo로 감싸 출력합니다.
+- 실제 실행 시에는 echo를 제거하여 사용합니다.
+
+### 2) 실행 결과 확인
+
+```bash
+aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --instance-id i-0c28d55ca1f21c180 | jq
+```
+
+- `StandardOutputContent`, `StandardErrorContent`에서 실행 결과를 확인할 수 있습니다.
+
+### 3) 주요 트러블슈팅
+
+- **dubious ownership 오류**  
+  → `git config --global --add safe.directory /home/ec2-user/terra_gen` 명령을 git pull 전에 실행
+- **$HOME not set 오류**  
+  → `export HOME=/home/ec2-user` 추가
+- **로컬 변경사항으로 인한 pull 실패**  
+  → `git reset --hard HEAD`로 강제 pull
+- **Terraform 변수 미지정 오류**  
+  → `terraform plan/apply`에 `-var 'eks_role_arn=...'` 옵션 추가 필요
+
+### 4) 실습 자동화 요약
+
+- Bastion에서 SSM, git, Terraform을 활용해 EKS 인프라를 완전 자동화로 구축/삭제
+- 모든 명령은 echo로 감싸 출력(실습 표준)
+- git_token.txt는 절대 커밋하지 않음(.gitignore에 추가)
+- 반복 실행, 오류, 자동화, 문서화, git 관리 등 실무에 필요한 모든 과정을 단계별로 경험
+
+---
+
+## 9. Bastion VPC와 EKS VPC 간 내부 통신(VPC Peering) 설정
 
 ### 1) VPC Peering 연결 생성
 
