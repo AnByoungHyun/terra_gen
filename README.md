@@ -318,4 +318,69 @@ aws ec2 associate-route-table --subnet-id <PRIVATE_SUBNET_ID> --route-table-id <
 > 각 명령의 `<...>` 부분은 실제 생성된 리소스 ID로 대체해야 합니다.
 > NAT Gateway가 생성된 후 상태가 available이 될 때까지 잠시 기다려야 합니다.
 
---- 
+---
+
+## EKS 인프라 자동화 구축 실습 가이드
+
+## 1. 사전 준비
+
+- **EC2 Bastion Host**: SSM Agent가 설치된 Amazon Linux 2023, IAM Role 할당
+- **GitHub Personal Access Token**: 프라이빗 리포지토리 접근용, 로컬에 `./tmp/git_token.txt`로 저장
+- **AWS CLI 프로파일**: (EC2에 Role 할당 시 profile 불필요)
+
+## 2. 쉘 스크립트 실행 방법
+
+> **참고:**
+> - 전체 인프라 자동화(스크립트 실행)는 약 2분 정도 소요됩니다.
+> - EKS 클러스터가 실제로 ACTIVE 상태가 되기까지는 추가로 5분 정도 더 걸릴 수 있습니다.
+
+### 2-1. SSM send-command로 원격 실행 (실습 표준)
+
+1. **로컬에서 git token 준비**
+   ```bash
+   # Github Personal Access Token을 ./tmp/git_token.txt에 저장
+   export GIT_TOKEN=$(cat ./tmp/git_token.txt)
+   ```
+
+2. **SSM send-command 명령어 (ec2-user로 실행, echo로 감싸서 출력)**
+   ```bash
+   GIT_TOKEN=$(cat ./tmp/git_token.txt); echo $(aws ssm send-command \
+     --instance-ids i-0c28d55ca1f21c180 \
+     --document-name "AWS-RunShellScript" \
+     --parameters "commands=[\"cd /home/ec2-user; sudo -u ec2-user bash -c 'if [ -d terra_gen ]; then cd terra_gen && git pull https://${GIT_TOKEN}@github.com/AnByoungHyun/terra_gen.git; else git clone https://${GIT_TOKEN}@github.com/AnByoungHyun/terra_gen.git; cd terra_gen; fi; chmod +x create-eks-infra.sh; ./create-eks-infra.sh create'\"]" \
+     --region ap-northeast-1 \
+     --profile hyun-ssm)
+   ```
+   - 이미 디렉토리가 있으면 git pull, 없으면 git clone 후 스크립트 실행
+   - delete 실행 시 마지막 명령만 `./create-eks-infra.sh delete`로 변경
+
+3. **명령 실행 결과 확인**
+   ```bash
+   echo $(aws ssm get-command-invocation \
+     --command-id <CommandId> \
+     --instance-id i-0c28d55ca1f21c180 \
+     --profile hyun-ssm)
+   ```
+   - CommandId는 send-command 결과에서 확인
+   - 여러 번 반복 실행하여 Status가 Success가 될 때까지 확인
+
+## 3. 직접 EC2에서 실행 (SSM Session Manager 등)
+
+```bash
+# ec2-user로 로그인 후
+cd ~/terra_gen
+chmod +x create-eks-infra.sh
+./create-eks-infra.sh create   # 생성
+./create-eks-infra.sh delete   # 삭제
+```
+
+## 4. 참고 및 팁
+
+- **IAM Role**이 할당된 EC2에서는 profile 옵션 없이 실행 가능
+- **실습 표준**: 모든 명령은 echo로 감싸서 출력
+- **토큰 보안**: git token은 절대 git에 올리지 않고, 로컬에서만 관리
+- **명령 자동화/반복**: while문, jq 등으로 결과 파싱 가능
+
+---
+
+궁금한 점이나 오류 발생 시 README에 있는 예시 명령을 복사해 사용하거나, 추가 문의해 주세요! 

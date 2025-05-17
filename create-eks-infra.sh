@@ -12,7 +12,6 @@ AVAILABILITY_ZONE2="ap-northeast-1c"
 AVAILABILITY_ZONE3="ap-northeast-1d"
 CLUSTER_NAME="my-eks-cluster"
 EKS_ROLE_ARN="arn:aws:iam::626635419731:role/eksClusterRole"
-PROFILE="default" # bestion에 할당된 IAM Role을 사용할 경우 profile 옵션 생략 가능
 
 ACTION=${1:-create}
 ID_FILE="eks-infra.ids"
@@ -98,27 +97,27 @@ elif [ "$ACTION" = "delete" ]; then
   source $ID_FILE
   echo "리소스 삭제를 시작합니다. (명령어는 echo로 감싸서 출력)"
   # 1. EKS 클러스터 삭제
-  echo aws eks delete-cluster --name $CLUSTER_NAME --region $REGION
+  aws eks delete-cluster --name $CLUSTER_NAME --region $REGION
   # 2. 보안 그룹 삭제
-  echo aws ec2 delete-security-group --group-id $SG_ID --region $REGION
+  aws ec2 delete-security-group --group-id $SG_ID --region $REGION
   # 3. 프라이빗 라우트 테이블 삭제
-  echo aws ec2 delete-route-table --route-table-id $PRI_RTB_ID --region $REGION
+  aws ec2 delete-route-table --route-table-id $PRI_RTB_ID --region $REGION
   # 4. 퍼블릭 라우트 테이블 삭제
-  echo aws ec2 delete-route-table --route-table-id $PUB_RTB_ID --region $REGION
+  aws ec2 delete-route-table --route-table-id $PUB_RTB_ID --region $REGION
   # 5. NAT Gateway 삭제
-  echo aws ec2 delete-nat-gateway --nat-gateway-id $NAT_GW_ID --region $REGION
+  aws ec2 delete-nat-gateway --nat-gateway-id $NAT_GW_ID --region $REGION
   # 6. EIP 해제
-  echo aws ec2 release-address --allocation-id $EIP_ALLOC_ID --region $REGION
+  aws ec2 release-address --allocation-id $EIP_ALLOC_ID --region $REGION
   # 7. IGW Detach & 삭제
-  echo aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID --region $REGION
-  echo aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID --region $REGION
+  aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID --region $REGION
+  aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID --region $REGION
   # 8. 서브넷 삭제
-  echo aws ec2 delete-subnet --subnet-id $SUBNET1_ID --region $REGION
-  echo aws ec2 delete-subnet --subnet-id $SUBNET2_ID --region $REGION
-  echo aws ec2 delete-subnet --subnet-id $SUBNET3_ID --region $REGION
-  echo aws ec2 delete-subnet --subnet-id $PUBLIC_SUBNET_ID --region $REGION
+  aws ec2 delete-subnet --subnet-id $SUBNET1_ID --region $REGION
+  aws ec2 delete-subnet --subnet-id $SUBNET2_ID --region $REGION
+  aws ec2 delete-subnet --subnet-id $SUBNET3_ID --region $REGION
+  aws ec2 delete-subnet --subnet-id $PUBLIC_SUBNET_ID --region $REGION
   # 9. VPC 삭제
-  echo aws ec2 delete-vpc --vpc-id $VPC_ID --region $REGION
+  aws ec2 delete-vpc --vpc-id $VPC_ID --region $REGION
   echo "$ID_FILE 파일을 삭제합니다."
   rm -f $ID_FILE
   exit 0
