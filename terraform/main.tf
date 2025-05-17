@@ -13,12 +13,14 @@ module "subnet" {
   private_subnet_cidrs = var.private_subnet_cidrs
   public_subnet_cidr   = var.public_subnet_cidr
   azs                  = var.azs
+  public_route_table_id = module.vpc.public_route_table_id
 }
 
 module "natgw" {
   source         = "./modules/natgw"
   vpc_id         = module.vpc.vpc_id
   public_subnet_id = module.subnet.public_subnet_id
+  private_subnet_ids = module.subnet.private_subnet_ids
 }
 
 module "eks" {
