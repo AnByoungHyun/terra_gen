@@ -1,33 +1,32 @@
+provider "aws" {
+  region = var.region
+}
+
 module "vpc" {
-  source = "./modules/vpc"
-  region = "ap-northeast-1"
-  vpc_cidr = "10.20.0.0/16"
+  source   = "./modules/vpc"
+  vpc_cidr = var.vpc_cidr
 }
 
 module "subnet" {
-  source = "./modules/subnet"
-  vpc_id = module.vpc.vpc_id
-  region = "ap-northeast-1"
-  private_subnet_cidrs = ["10.20.1.0/24", "10.20.2.0/24", "10.20.3.0/24"]
-  public_subnet_cidr = "10.20.10.0/24"
-  azs = ["ap-northeast-1a", "ap-northeast-1c", "ap-northeast-1d"]
+  source   = "./modules/subnet"
+  vpc_id   = module.vpc.vpc_id
+  private_subnet_cidrs = var.private_subnet_cidrs
+  public_subnet_cidr   = var.public_subnet_cidr
+  azs                  = var.azs
 }
 
 module "natgw" {
-  source = "./modules/natgw"
+  source         = "./modules/natgw"
+  vpc_id         = module.vpc.vpc_id
   public_subnet_id = module.subnet.public_subnet_id
-  region = "ap-northeast-1"
 }
 
 module "eks" {
-  source = "./modules/eks"
-  vpc_id = module.vpc.vpc_id
-  private_subnet_ids = module.subnet.private_subnet_ids
-  sg_id = module.vpc.eks_sg_id
-  cluster_name = "my-eks-cluster"
-  cluster_version = "1.30"
-  eks_role_arn = "arn:aws:iam::626635419731:role/eksClusterRole"
-  region = "ap-northeast-1"
+  source         = "./modules/eks"
+  cluster_name   = var.cluster_name
+  vpc_id         = module.vpc.vpc_id
+  subnet_ids     = module.subnet.private_subnet_ids
+  eks_role_arn   = var.eks_role_arn
 }
 
 output "vpc_id" { value = module.vpc.vpc_id }

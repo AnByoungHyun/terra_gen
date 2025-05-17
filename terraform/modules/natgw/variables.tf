@@ -1,0 +1,1 @@
+variable "public_subnet_id" { description = "퍼블릭 서브넷 ID" } 

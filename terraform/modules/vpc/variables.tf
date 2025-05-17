@@ -1,0 +1,1 @@
+variable "vpc_cidr" { description = "VPC CIDR 블록" } 
