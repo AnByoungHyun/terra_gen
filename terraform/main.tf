@@ -33,11 +33,6 @@ module "eks" {
 
 # --- VPC Peering 및 라우트 추가 ---
 
-# Bastion VPC ID와 라우트 테이블 ID, CIDR을 변수로 선언 (variables.tf에 추가 필요)
-variable "bastion_vpc_id" {}
-variable "bastion_vpc_cidr" { default = "10.10.0.0/16" }
-variable "bastion_route_table_id" { default = "rtb-07a6a2be056b84f48" }
-
 resource "aws_vpc_peering_connection" "eks_to_bastion" {
   vpc_id        = module.vpc.vpc_id
   peer_vpc_id   = var.bastion_vpc_id
