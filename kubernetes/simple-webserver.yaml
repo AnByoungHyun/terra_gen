@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simple-webserver
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: simple-webserver
+  template:
+    metadata:
+      labels:
+        app: simple-webserver
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple-webserver
+spec:
+  type: LoadBalancer
+  selector:
+    app: simple-webserver
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
