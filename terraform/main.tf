@@ -44,13 +44,13 @@ resource "aws_vpc_peering_connection" "eks_to_bastion" {
 
 resource "aws_route" "to_bastion_vpc" {
   route_table_id            = var.bastion_route_table_id
-  destination_cidr_block    = var.bastion_vpc_cidr
+  destination_cidr_block    = var.vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.eks_to_bastion.id
 }
 
 resource "aws_route" "to_eks_vpc" {
   route_table_id            = module.vpc.public_route_table_id
-  destination_cidr_block    = var.vpc_cidr
+  destination_cidr_block    = var.bastion_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.eks_to_bastion.id
 }
 
