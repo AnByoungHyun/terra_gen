@@ -54,6 +54,17 @@ resource "aws_route" "to_eks_vpc" {
   vpc_peering_connection_id = aws_vpc_peering_connection.eks_to_bastion.id
 }
 
+resource "aws_vpc_peering_connection_options" "eks_to_bastion" {
+  vpc_peering_connection_id = aws_vpc_peering_connection.eks_to_bastion.id
+
+  requester {
+    allow_remote_vpc_dns_resolution = true
+  }
+  accepter {
+    allow_remote_vpc_dns_resolution = true
+  }
+}
+
 output "vpc_id" { value = module.vpc.vpc_id }
 output "private_subnet_ids" { value = module.subnet.private_subnet_ids }
 output "public_subnet_id" { value = module.subnet.public_subnet_id }
