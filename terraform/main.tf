@@ -29,6 +29,12 @@ module "eks" {
   vpc_id         = module.vpc.vpc_id
   subnet_ids     = module.subnet.private_subnet_ids
   eks_role_arn   = var.eks_role_arn
+  node_group_name = var.node_group_name
+  node_role_arn   = var.node_role_arn
+  node_instance_type = var.node_instance_type
+  node_desired_size  = var.node_desired_size
+  node_max_size      = var.node_max_size
+  node_min_size      = var.node_min_size
 }
 
 # --- VPC Peering 및 라우트 추가 ---

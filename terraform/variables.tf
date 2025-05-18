@@ -21,4 +21,12 @@ variable "bastion_vpc_cidr" {
 variable "bastion_route_table_id" {
   description = "Bastion VPC의 라우트 테이블 ID"
   default     = "rtb-07a6a2be056b84f48"
-} 
+}
+
+variable "node_group_name" { default = "default-node-group" }
+variable "node_role_arn" { description = "EKS Node Group에 할당할 IAM Role ARN" }
+variable "node_instance_type" { default = "t3.medium" }
+variable "node_desired_size" { default = 2 }
+variable "node_max_size" { default = 3 }
+variable "node_min_size" { default = 1 }
+variable "node_ssh_key" { default = "eks-key" } 

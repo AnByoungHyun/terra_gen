@@ -13,3 +13,24 @@ resource "aws_eks_cluster" "this" {
     security_group_ids = [aws_security_group.eks.id]
   }
 }
+
+resource "aws_eks_node_group" "default" {
+  cluster_name    = aws_eks_cluster.this.name
+  node_group_name = var.node_group_name
+  node_role_arn   = var.node_role_arn
+  subnet_ids      = var.subnet_ids
+
+  scaling_config {
+    desired_size = var.node_desired_size
+    max_size     = var.node_max_size
+    min_size     = var.node_min_size
+  }
+
+  instance_types = [var.node_instance_type]
+
+  ami_type = "AL2_x86_64"
+
+  tags = {
+    Name = var.node_group_name
+  }
+}

@@ -51,6 +51,55 @@
 
 ---
 
+## 3-1. Bastion Host에 kubectl 설치 및 EKS kubeconfig 셋팅 방법
+
+### 1) kubectl 설치 (공식 최신 버전)
+- Bastion Host는 CloudFormation UserData에서 **kubectl이 자동 설치**됩니다.
+- 수동 설치가 필요하다면 아래 명령을 실행하세요.
+  ```bash
+  curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+  rm -f kubectl
+  kubectl version --client
+  ```
+
+### 2) EKS kubeconfig 셋팅 (ec2-user 기준)
+- Bastion에서 EKS 클러스터에 kubectl로 접속하려면 **ec2-user 계정 기준**으로 kubeconfig를 셋팅해야 합니다.
+- 아래 명령을 사용하세요.
+  ```bash
+  sudo -u ec2-user aws eks update-kubeconfig \
+    --region <EKS_리전> \
+    --name <EKS_클러스터_이름>
+  ```
+  - 예시:
+    ```bash
+    sudo -u ec2-user aws eks update-kubeconfig --region ap-northeast-1 --name my-eks-cluster
+    ```
+- 정상적으로 셋팅되면 아래와 같이 클러스터 정보를 조회할 수 있습니다.
+  ```bash
+  sudo -u ec2-user kubectl get nodes -o wide
+  ```
+
+### 3) SSM send-command로 자동화 실습 (표준)
+- SSM 명령은 반드시 **echo로 감싸서 출력**하고, 실제 실행은 echo를 제거해 사용합니다.
+- 예시: ec2-user 기준 kubeconfig 셋팅
+  ```bash
+  echo $(aws ssm send-command --profile hyun-ssm --instance-ids <Bastion-Instance-Id> --document-name 'AWS-RunShellScript' --parameters commands='["sudo -u ec2-user aws eks update-kubeconfig --region ap-northeast-1 --name my-eks-cluster && echo ec2-user kubeconfig 재설정 완료"]' --comment 'ec2-user kubeconfig 재설정' --output text)
+  ```
+- kubectl 명령도 ec2-user 기준으로 실행해야 하며, 예시:
+  ```bash
+  echo $(aws ssm send-command --profile hyun-ssm --instance-ids <Bastion-Instance-Id> --document-name 'AWS-RunShellScript' --parameters commands='["sudo -u ec2-user kubectl get nodes -o wide || echo 노드 조회 실패"]' --comment 'ec2-user로 kubectl get nodes 최종 확인' --output text)
+  ```
+
+### 4) 주요 트러블슈팅 및 실습 팁
+- kubeconfig가 /root/.kube/config에만 생성되면 ec2-user로 kubectl이 동작하지 않으니 반드시 ec2-user 기준으로 셋팅 필요
+- "The connection to the server localhost:8080 was refused" 오류 시, kubeconfig 경로/권한/사용자 확인
+- EKS 클러스터에 노드가 없으면 "No resources found"가 출력되며, 이는 정상 연결 상태임
+- SSM 명령 실행 후에는 get-command-invocation으로 결과를 꼭 확인
+- 실습 표준: 모든 명령 echo로 감싸 출력, git_token.txt는 절대 커밋하지 않음, 반복 실행/오류/자동화/문서화/git 관리 등 실무에 필요한 모든 과정 단계별 경험
+
+---
+
 ## 4. SSM(Session Manager)으로 Bastion Host 접속하기
 
 1. **IAM 권한 확인**
@@ -261,6 +310,27 @@ aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --ins
 - 모든 명령은 echo로 감싸 출력(실습 표준)
 - git_token.txt는 절대 커밋하지 않음(.gitignore에 추가)
 - 반복 실행, 오류, 자동화, 문서화, git 관리 등 실무에 필요한 모든 과정을 단계별로 경험
+
+### 5) 테라폼 리소스 전체 삭제 (SSM 자동화)
+
+```bash
+echo $(aws ssm send-command --profile hyun-ssm --instance-ids i-0c28d55ca1f21c180 --document-name 'AWS-RunShellScript' --parameters commands='["set -e; export HOME=/home/ec2-user; cd /home/ec2-user/terra_gen/terraform; terraform init; terraform destroy -auto-approve"]' --comment 'EKS 인프라 리소스 전체 삭제' --output text)
+```
+- 위 명령을 실행하면 Bastion에서 모든 Terraform 리소스가 안전하게 삭제됩니다.
+- 실습 표준에 따라 echo로 감싸 출력하며, 실제 실행 시에는 echo를 제거해 사용합니다.
+- 삭제 진행 상황 및 결과는 아래와 같이 확인합니다.
+
+```bash
+aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --instance-id i-0c28d55ca1f21c180 | jq
+```
+
+- 컬러 코드 등 ANSI 이스케이프 시퀀스가 포함된 경우, 아래와 같이 사람이 읽기 쉬운 형태로 변환할 수 있습니다.
+
+```bash
+aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --instance-id i-0c28d55ca1f21c180 \
+| jq -r '.StandardOutputContent' \
+| sed -r 's/\\u001b\\[[0-9;]*m//g'
+```
 
 ---
 
