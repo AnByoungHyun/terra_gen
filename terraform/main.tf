@@ -31,6 +31,34 @@ module "eks" {
   eks_role_arn   = var.eks_role_arn
 }
 
+# --- VPC Peering 및 라우트 추가 ---
+
+# Bastion VPC ID와 라우트 테이블 ID, CIDR을 변수로 선언 (variables.tf에 추가 필요)
+variable "bastion_vpc_id" {}
+variable "bastion_vpc_cidr" { default = "10.10.0.0/16" }
+variable "bastion_route_table_id" { default = "rtb-07a6a2be056b84f48" }
+
+resource "aws_vpc_peering_connection" "eks_to_bastion" {
+  vpc_id        = module.vpc.vpc_id
+  peer_vpc_id   = var.bastion_vpc_id
+  auto_accept   = true
+  tags = {
+    Name = "eks-to-bastion-peering"
+  }
+}
+
+resource "aws_route" "to_bastion_vpc" {
+  route_table_id            = var.bastion_route_table_id
+  destination_cidr_block    = var.bastion_vpc_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.eks_to_bastion.id
+}
+
+resource "aws_route" "to_eks_vpc" {
+  route_table_id            = module.vpc.public_route_table_id
+  destination_cidr_block    = var.vpc_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.eks_to_bastion.id
+}
+
 output "vpc_id" { value = module.vpc.vpc_id }
 output "private_subnet_ids" { value = module.subnet.private_subnet_ids }
 output "public_subnet_id" { value = module.subnet.public_subnet_id }
