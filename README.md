@@ -135,6 +135,54 @@
 
 ---
 
+## 5-1. Terraform으로 EKS 인프라 배포 및 삭제
+
+### 1) EKS 인프라 배포 (적용)
+
+Bastion Host에서 아래 명령을 실행하세요. (ec2-user 환경)
+
+```bash
+cd /home/ec2-user/terraform
+terraform init
+terraform plan
+terraform apply -auto-approve
+```
+
+- 실습 표준에 따라 SSM send-command로 echo로 감싸서 실행 예시:
+
+```bash
+echo $(aws ssm send-command \
+  --instance-ids "i-0c28d55ca1f21c180" \
+  --document-name "AWS-RunShellScript" \
+  --parameters 'commands=["cd /home/ec2-user/terraform && terraform init && terraform plan && terraform apply -auto-approve"]' \
+  --region ap-northeast-1 \
+  --profile hyun-ssm)
+```
+
+### 2) EKS 인프라 삭제 (파괴)
+
+아래 명령으로 모든 리소스를 삭제할 수 있습니다.
+
+```bash
+cd /home/ec2-user/terraform
+terraform destroy -auto-approve
+```
+
+- 실습 표준에 따라 SSM send-command로 echo로 감싸서 실행 예시:
+
+```bash
+echo $(aws ssm send-command \
+  --instance-ids "i-0c28d55ca1f21c180" \
+  --document-name "AWS-RunShellScript" \
+  --parameters 'commands=["cd /home/ec2-user/terraform && terraform destroy -auto-approve"]' \
+  --region ap-northeast-1 \
+  --profile hyun-ssm)
+```
+
+- destroy 명령 실행 전, 반드시 중요한 리소스가 없는지 확인하세요.
+
+---
+
 ## 6. SSM send-command로 Bastion에 Terraform 버전 확인하기
 
 ### 1) 명령 실행
@@ -273,224 +321,156 @@ aws iam attach-role-policy --role-name eksClusterRole --policy-arn arn:aws:iam::
 
 ---
 
-## 8. SSM send-command를 활용한 Bastion 자동화 실습
+## 8. Argo CD 대시보드 접근 방법 (포트포워딩)
 
-### 1) 실습 표준: 명령을 echo로 감싸 출력
+EKS가 프라이빗 서브넷에 있고, Bastion Host를 통해서만 접근 가능한 환경에서 Argo CD 대시보드에 접속하는 방법입니다.
+
+### 1) Bastion Host에서 포트포워딩 실행
+
+Bastion Host(ec2-user)에서 아래 명령을 실행하여,  
+EKS 내 argocd-server 서비스의 80번 포트를 Bastion Host의 8080 포트로 포워딩합니다.
 
 ```bash
-GIT_TOKEN=$(cat ./tmp/git_token.txt)
-echo $(aws ssm send-command --profile hyun-ssm --instance-ids i-0c28d55ca1f21c180 --document-name 'AWS-RunShellScript' --parameters commands='["set -e; export HOME=/home/ec2-user; cd /home/ec2-user; if [ ! -d terra_gen ]; then git clone https://${GIT_TOKEN}@github.com/AnByoungHyun/terra_gen.git; else git config --global --add safe.directory /home/ec2-user/terra_gen; cd terra_gen; git reset --hard HEAD; git pull; fi; cd /home/ec2-user/terra_gen/terraform; terraform init; terraform plan -out=tfplan; terraform apply -auto-approve tfplan"]' --comment 'EKS 인프라 자동화 실습' --output text)
+sudo su ec2-user -c "kubectl port-forward svc/argocd-server -n argocd 8080:80"
 ```
 
-- 실습 표준에 따라 모든 명령은 echo로 감싸 출력합니다.
-- 실제 실행 시에는 echo를 제거하여 사용합니다.
+### 2) 로컬 PC에서 SSM 포트포워딩 세션 시작
 
-### 2) 실행 결과 확인
-
-```bash
-aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --instance-id i-0c28d55ca1f21c180 | jq
-```
-
-- `StandardOutputContent`, `StandardErrorContent`에서 실행 결과를 확인할 수 있습니다.
-
-### 3) 주요 트러블슈팅
-
-- **dubious ownership 오류**  
-  → `git config --global --add safe.directory /home/ec2-user/terra_gen` 명령을 git pull 전에 실행
-- **$HOME not set 오류**  
-  → `export HOME=/home/ec2-user` 추가
-- **로컬 변경사항으로 인한 pull 실패**  
-  → `git reset --hard HEAD`로 강제 pull
-- **Terraform 변수 미지정 오류**  
-  → `terraform plan/apply`에 `-var 'eks_role_arn=...'` 옵션 추가 필요
-
-### 4) 실습 자동화 요약
-
-- Bastion에서 SSM, git, Terraform을 활용해 EKS 인프라를 완전 자동화로 구축/삭제
-- 모든 명령은 echo로 감싸 출력(실습 표준)
-- git_token.txt는 절대 커밋하지 않음(.gitignore에 추가)
-- 반복 실행, 오류, 자동화, 문서화, git 관리 등 실무에 필요한 모든 과정을 단계별로 경험
-
-### 5) 테라폼 리소스 전체 삭제 (SSM 자동화)
+로컬 PC에서 아래 명령을 실행하면,  
+내 PC의 8080 포트가 Bastion Host의 8080 포트로 안전하게 터널링됩니다.
 
 ```bash
-echo $(aws ssm send-command --profile hyun-ssm --instance-ids i-0c28d55ca1f21c180 --document-name 'AWS-RunShellScript' --parameters commands='["set -e; export HOME=/home/ec2-user; cd /home/ec2-user/terra_gen/terraform; terraform init; terraform destroy -auto-approve"]' --comment 'EKS 인프라 리소스 전체 삭제' --output text)
-```
-- 위 명령을 실행하면 Bastion에서 모든 Terraform 리소스가 안전하게 삭제됩니다.
-- 실습 표준에 따라 echo로 감싸 출력하며, 실제 실행 시에는 echo를 제거해 사용합니다.
-- 삭제 진행 상황 및 결과는 아래와 같이 확인합니다.
-
-```bash
-aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --instance-id i-0c28d55ca1f21c180 | jq
-```
-
-- 컬러 코드 등 ANSI 이스케이프 시퀀스가 포함된 경우, 아래와 같이 사람이 읽기 쉬운 형태로 변환할 수 있습니다.
-
-```bash
-aws ssm get-command-invocation --profile hyun-ssm --command-id <CommandId> --instance-id i-0c28d55ca1f21c180 \
-| jq -r '.StandardOutputContent' \
-| sed -r 's/\\u001b\\[[0-9;]*m//g'
-```
-
----
-
-## 9. Bastion VPC와 EKS VPC 간 내부 통신(VPC Peering) 설정
-
-### 1) VPC Peering 연결 생성
-
-```bash
-aws ec2 create-vpc-peering-connection \
-  --vpc-id <BASTION_VPC_ID> \
-  --peer-vpc-id <EKS_VPC_ID> \
+aws ssm start-session \
+  --target i-0c28d55ca1f21c180 \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["8080"],"localPortNumber":["8080"]}' \
   --region ap-northeast-1 \
   --profile hyun-ssm
 ```
 
-### 2) 피어링 연결 승인
+### 3) 웹 브라우저에서 접속
+
+이제 로컬 PC에서 아래 주소로 접속하면 Argo CD 대시보드에 접근할 수 있습니다.
+
+```
+http://localhost:8080
+```
+
+### 4) 초기 관리자 비밀번호 확인
+
+아래 명령으로 Argo CD의 admin 초기 비밀번호를 확인할 수 있습니다.
 
 ```bash
-aws ec2 accept-vpc-peering-connection \
-  --vpc-peering-connection-id <PEERING_ID> \
+sudo su ec2-user -c "kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath=\"{.data.password}\" | base64 --decode"
+```
+
+---
+
+이렇게 하면 Bastion Host와 SSM 포트포워딩을 활용해  
+로컬 PC에서 안전하게 Argo CD 대시보드에 접근할 수 있습니다.
+
+---
+
+## 9. Helm을 이용한 Argo CD 설치 및 자동 배포 실습
+
+### 1) Helm 저장소 추가 및 업데이트
+```bash
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+```
+
+### 2) Argo CD 네임스페이스 생성
+```bash
+kubectl create namespace argocd
+```
+
+### 3) Helm Chart로 Argo CD 설치
+```bash
+helm install argocd argo/argo-cd -n argocd
+```
+- `argocd`는 릴리스 이름(원하는 이름으로 변경 가능)
+- `-n argocd`는 설치할 네임스페이스
+
+### 4) 설치 확인
+```bash
+kubectl get all -n argocd
+```
+- Argo CD 관련 파드, 서비스 등이 정상적으로 생성되었는지 확인
+
+### 5) (선택) values.yaml로 커스터마이징 설치
+```bash
+helm install argocd argo/argo-cd -n argocd -f values.yaml
+```
+
+### 6) Argo CD UI 접속 (포트포워딩)
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+- 브라우저에서 https://localhost:8080 접속
+
+### 7) 초기 관리자 비밀번호 확인
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+```
+- 사용자명: admin
+- 위 명령으로 나온 비밀번호로 로그인
+
+### 8) SSM send-command로 Bastion에서 자동 설치 예시
+```bash
+echo $(aws ssm send-command \
+  --instance-ids "i-0c28d55ca1f21c180" \
+  --document-name "AWS-RunShellScript" \
+  --parameters 'commands=["helm repo add argo https://argoproj.github.io/argo-helm && helm repo update && kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - && helm install argocd argo/argo-cd -n argocd"]' \
   --region ap-northeast-1 \
-  --profile hyun-ssm
+  --profile hyun-ssm)
 ```
 
-### 3) 라우트 테이블에 피어링 경로 추가
-
-```bash
-# Bastion VPC 라우트 테이블에 EKS VPC 경로 추가
-aws ec2 create-route \
-  --route-table-id <BASTION_RTB_ID> \
-  --destination-cidr-block <EKS_VPC_CIDR> \
-  --vpc-peering-connection-id <PEERING_ID> \
-  --region ap-northeast-1 \
-  --profile hyun-ssm
-
-# EKS VPC 라우트 테이블에 Bastion VPC 경로 추가
-aws ec2 create-route \
-  --route-table-id <EKS_RTB_ID> \
-  --destination-cidr-block <BASTION_VPC_CIDR> \
-  --vpc-peering-connection-id <PEERING_ID> \
-  --region ap-northeast-1 \
-  --profile hyun-ssm
-```
-
-### 4) 보안 그룹 설정
-
-- Bastion → EKS, EKS → Bastion 통신이 필요한 포트만 허용
+### 참고
+- Helm Chart의 다양한 옵션은 공식 문서([argo-helm/argo-cd values.yaml](https://github.com/argoproj/argo-helm/blob/main/charts/argo-cd/values.yaml))에서 확인할 수 있습니다.
+- 실무에서는 Ingress, 인증, 리소스 제한 등 values.yaml로 세부 설정을 조정하는 것이 일반적입니다.
 
 ---
 
-> 위 명령에서 `<...>` 부분은 실제 리소스 ID 및 CIDR로 대체해야 합니다.
-> VPC Endpoint 방식이 필요하다면 추가 안내 가능합니다.
+## 10. Private Subnet 환경에서 Argo CD 대시보드 안전하게 접근하기 (SSM + kubectl port-forward)
 
----
+### 1) 개요
+- 쿠버네티스(EKS 등)가 프라이빗 서브넷에 있을 때, 외부에서 Argo CD 대시보드(웹 UI)에 안전하게 접근하는 대표적인 방법입니다.
+- **SSM Session Manager 포트포워딩**과 **kubectl port-forward**를 조합하여, Bastion Host를 통해 외부 노출 없이 안전하게 접근할 수 있습니다.
 
-## 9. Private 서브넷에서 인터넷 접근을 위한 NAT Gateway 구성
-
-Helm 등 외부 인터넷 접근이 필요한 경우, NAT Gateway와 퍼블릭 서브넷을 아래와 같이 구성합니다.
-
-### 1) 퍼블릭 서브넷 생성 (예: 10.20.10.0/24, ap-northeast-1a)
-
-```bash
-aws ec2 create-subnet --vpc-id <VPC_ID> --cidr-block 10.20.10.0/24 --availability-zone ap-northeast-1a --region ap-northeast-1 --profile hyun-ssm
+### 2) 전체 흐름
+```
+[로컬PC:8080] --(SSM 포트포워딩)--> [Bastion:8080] --(kubectl port-forward)--> [ArgoCD:443]
 ```
 
-### 2) Elastic IP 생성
+### 3) 단계별 명령 예시
 
+#### (1) SSM Session Manager로 Bastion Host에 포트포워딩
 ```bash
-aws ec2 allocate-address --domain vpc --region ap-northeast-1 --profile hyun-ssm
+aws ssm start-session \
+  --target <Bastion-Instance-Id> \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["8080"],"localPortNumber":["8080"]}' \
+  --profile <profile>
 ```
+- 위 명령을 실행하면, 로컬PC의 8080 포트가 Bastion Host의 8080 포트로 포워딩됩니다.
 
-### 3) NAT Gateway 생성
-
+#### (2) Bastion Host에서 kubectl port-forward 실행
 ```bash
-aws ec2 create-nat-gateway --subnet-id <PUBLIC_SUBNET_ID> --allocation-id <EIP_ALLOCATION_ID> --region ap-northeast-1 --profile hyun-ssm
+kubectl port-forward svc/argocd-server -n argocd 8080:443
 ```
+- Bastion Host의 8080 포트가 쿠버네티스 argocd-server 서비스(443)로 포워딩됩니다.
 
-### 4) 라우트 테이블 구성
+#### (3) 로컬 브라우저에서 접속
+- 브라우저에서 https://localhost:8080 으로 접속하면 Argo CD 대시보드에 접근할 수 있습니다.
 
-#### (1) 퍼블릭 라우트 테이블 생성 및 IGW 라우팅
-```bash
-aws ec2 create-route-table --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
-aws ec2 create-route --route-table-id <PUBLIC_RTB_ID> --destination-cidr-block 0.0.0.0/0 --gateway-id <IGW_ID> --region ap-northeast-1 --profile hyun-ssm
-aws ec2 associate-route-table --subnet-id <PUBLIC_SUBNET_ID> --route-table-id <PUBLIC_RTB_ID> --region ap-northeast-1 --profile hyun-ssm
-```
+### 4) 장점 및 실무 팁
+- **보안성**: 외부에 직접 노출하지 않고, IAM 권한만 있으면 SSH 키 없이도 안전하게 접근 가능
+- **간편성**: 별도의 VPN, Ingress, ALB 등 추가 인프라 없이 바로 사용 가능
+- **임시/운영 모두 활용 가능**: 실습, PoC, 운영 환경에서 임시 접근, 트러블슈팅, 긴급 운영 등에 매우 유용
+- 여러 명이 동시에 접근할 경우, 포트 번호(8081, 8082 등)를 다르게 할 수 있음
 
-#### (2) 프라이빗 라우트 테이블 생성 및 NAT GW 라우팅
-```bash
-aws ec2 create-route-table --vpc-id <VPC_ID> --region ap-northeast-1 --profile hyun-ssm
-aws ec2 create-route --route-table-id <PRIVATE_RTB_ID> --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <NAT_GW_ID> --region ap-northeast-1 --profile hyun-ssm
-# 프라이빗 서브넷 각각에 연결
-aws ec2 associate-route-table --subnet-id <PRIVATE_SUBNET_ID> --route-table-id <PRIVATE_RTB_ID> --region ap-northeast-1 --profile hyun-ssm
-```
+### 5) 참고
+- 상시 서비스(여러 사용자, 외부 연동 등)에는 Ingress+ALB+인증 방식이 더 적합
+- SSM 포트포워딩은 AWS CLI v2 이상에서 지원
 
-> 각 명령의 `<...>` 부분은 실제 생성된 리소스 ID로 대체해야 합니다.
-> NAT Gateway가 생성된 후 상태가 available이 될 때까지 잠시 기다려야 합니다.
-
----
-
-## EKS 인프라 자동화 구축 실습 가이드
-
-## 1. 사전 준비
-
-- **EC2 Bastion Host**: SSM Agent가 설치된 Amazon Linux 2023, IAM Role 할당
-- **GitHub Personal Access Token**: 프라이빗 리포지토리 접근용, 로컬에 `./tmp/git_token.txt`로 저장
-- **AWS CLI 프로파일**: (EC2에 Role 할당 시 profile 불필요)
-
-## 2. 쉘 스크립트 실행 방법
-
-> **참고:**
-> - 전체 인프라 자동화(스크립트 실행)는 약 2분 정도 소요됩니다.
-> - EKS 클러스터가 실제로 ACTIVE 상태가 되기까지는 추가로 5분 정도 더 걸릴 수 있습니다.
-
-### 2-1. SSM send-command로 원격 실행 (실습 표준)
-
-1. **로컬에서 git token 준비**
-   ```bash
-   # Github Personal Access Token을 ./tmp/git_token.txt에 저장
-   export GIT_TOKEN=$(cat ./tmp/git_token.txt)
-   ```
-
-2. **SSM send-command 명령어 (ec2-user로 실행, echo로 감싸서 출력)**
-   ```bash
-   GIT_TOKEN=$(cat ./tmp/git_token.txt); echo $(aws ssm send-command \
-     --instance-ids i-0c28d55ca1f21c180 \
-     --document-name "AWS-RunShellScript" \
-     --parameters "commands=[\"cd /home/ec2-user; sudo -u ec2-user bash -c 'if [ -d terra_gen ]; then cd terra_gen && git pull https://${GIT_TOKEN}@github.com/AnByoungHyun/terra_gen.git; else git clone https://${GIT_TOKEN}@github.com/AnByoungHyun/terra_gen.git; cd terra_gen; fi; chmod +x create-eks-infra.sh; ./create-eks-infra.sh create'\"]" \
-     --region ap-northeast-1 \
-     --profile hyun-ssm)
-   ```
-   - 이미 디렉토리가 있으면 git pull, 없으면 git clone 후 스크립트 실행
-   - delete 실행 시 마지막 명령만 `./create-eks-infra.sh delete`로 변경
-
-3. **명령 실행 결과 확인**
-   ```bash
-   echo $(aws ssm get-command-invocation \
-     --command-id <CommandId> \
-     --instance-id i-0c28d55ca1f21c180 \
-     --profile hyun-ssm)
-   ```
-   - CommandId는 send-command 결과에서 확인
-   - 여러 번 반복 실행하여 Status가 Success가 될 때까지 확인
-
-## 3. 직접 EC2에서 실행 (SSM Session Manager 등)
-
-```bash
-# ec2-user로 로그인 후
-cd ~/terra_gen
-chmod +x create-eks-infra.sh
-./create-eks-infra.sh create   # 생성
-./create-eks-infra.sh delete   # 삭제
-```
-
-## 4. 참고 및 팁
-
-- **IAM Role**이 할당된 EC2에서는 profile 옵션 없이 실행 가능
-- **실습 표준**: 모든 명령은 echo로 감싸서 출력
-- **토큰 보안**: git token은 절대 git에 올리지 않고, 로컬에서만 관리
-- **명령 자동화/반복**: while문, jq 등으로 결과 파싱 가능
-
----
-
-궁금한 점이나 오류 발생 시 README에 있는 예시 명령을 복사해 사용하거나, 추가 문의해 주세요! 
+--- 

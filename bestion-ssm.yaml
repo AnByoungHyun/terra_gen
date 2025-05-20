@@ -125,12 +125,8 @@ Resources:
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           rm -f kubectl
-          echo 'kubectl 최신 공식 URL로 설치 완료'
-          # (실습 표준) kubeconfig는 ec2-user 계정 기준으로 셋팅 필요
-          # SSM 자동화 시 반드시 sudo -u ec2-user로 실행해야 kubectl 정상 동작
-          mkdir -p /home/ec2-user/terraform
-          chown ec2-user:ec2-user /home/ec2-user/terraform
-
+          # helm 설치
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 Outputs:
   VPCId:
     Description: 생성된 VPC ID
